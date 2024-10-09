@@ -8,10 +8,12 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 
+const baseUrl = 'https://author-p130360-e1463269.adobeaemcloud.com';
+
 async function fetchReference(reference, env) {
   const fixedReference = reference.startsWith('/content/dam') ? reference.split('/content/dam')[1] : reference;
 
-  const fetchUrl = `https://author-p130360-e1463269.adobeaemcloud.com/api/assets${fixedReference}.json`;
+  const fetchUrl = `${baseUrl}/api/assets${fixedReference}.json`;
   console.log(`requesting ${fetchUrl}`)
 
   const response = await fetch(fetchUrl, {
@@ -34,6 +36,10 @@ async function visitTitle(node) {
 
 async function visitParagraph(node) {
   return node.properties.elements.paragraph.value;
+}
+
+async function visitImage(node, env) {
+	return `<img src="${node.properties.elements.image.value}">`
 }
 
 async function visitBlockRow(node) {
@@ -98,15 +104,39 @@ async function visit(node, env) {
       return visitBlock(node, env);
     case '/conf/global/settings/dam/cfm/models/block-row':
       return visitBlockRow(node, env);
+		case '/conf/global/settings/dam/cfm/models/image':
+			return visitImage(node, env);
     default:
       throw new Error(`not implemented: ${node}`);
   }
+}
+
+async function serveImage(pathName, env) {
+	const fetchUrl = `${baseUrl}${pathName}`;
+	const response = await fetch(fetchUrl, {
+		headers: {
+			authorization: `Bearer ${env.AEM_DEV_TOKEN}`,
+		},
+	});
+
+	if (!response.ok) {
+		throw new Error(JSON.stringify({ status: response.status, statusText: response.statusText }));
+	}
+
+	const imageBuffer = await response.arrayBuffer();
+	return new Response(imageBuffer, {
+		headers: { 'Content-Type': response.headers.get('Content-Type') },
+	});
 }
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const pathName = url.pathname.endsWith('/') ? `${url.pathname}index` : url.pathname;
+
+		if (pathName.endsWith('.webp')) {
+			return serveImage(pathName, env);
+		}
 
     try {
       const data = await fetchReference(pathName, env);
