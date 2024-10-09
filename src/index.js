@@ -47,7 +47,7 @@ async function visitBlockRow(node) {
   node.properties.elements.columns.value.forEach((column) => {
     result += `<div>${column}</div>`;
   });
-  result += '<div>';
+  result += '</div>';
   return result;
 }
 
@@ -133,6 +133,10 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const pathName = url.pathname.endsWith('/') ? `${url.pathname}index` : url.pathname;
+
+		const contentSourceAuthHeader = request.headers.get('authorization');
+
+		env.AEM_DEV_TOKEN = contentSourceAuthHeader || env.AEM_DEV_TOKEN;
 
 		if (pathName.endsWith('.webp')) {
 			return serveImage(pathName, env);
