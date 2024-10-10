@@ -1,110 +1,128 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
-
-const baseUrl = 'https://author-p130360-e1463269.adobeaemcloud.com';
-
-async function fetchReference(reference, env) {
-  const fixedReference = reference.startsWith('/content/dam') ? reference.split('/content/dam')[1] : reference;
-
-  const fetchUrl = `${baseUrl}/api/assets${fixedReference}.json`;
-  console.log(`requesting ${fetchUrl}`)
-
-  const response = await fetch(fetchUrl, {
-    headers: {
-      // https://experienceleague.adobe.com/en/docs/experience-manager-learn/getting-started-with-aem-headless/authentication/local-development-access-token
-      authorization: `Bearer ${env.AEM_DEV_TOKEN}`,
+const query = `
+query Page($path: String!) {
+  pageByPath(_path: $path) {
+    item {
+      _path
+      sections {
+        children {
+          __typename
+          ... on TitleModel {
+            title
+            titleLevel
+          }
+          ... on ImageModel {
+            image {
+              __typename
+              ... on ImageRef {
+                _path
+              }
+              ... on DocumentRef {
+                _path
+              }
+            }
+          }
+          ... on ParagraphModel {
+            paragraph {
+              html
+            }
+          }
+          ... on BlockModel {
+            blockName
+            rows {
+              ... on BlockRowModel {
+                columns {
+                  html
+                }
+              }
+            }
+          }
+        }
+      }
     }
-  });
-
-  if (!response.ok) {
-    throw new Error(JSON.stringify({ status: response.status, statusText: response.statusText }));
   }
+}
+`;
 
-  return await response.json();
+function fixSrcLinks(string, env) {
+	const fixed = string.replaceAll(/src="\/content\/dam/g, `src="${env.AUTHOR_INSTANCE}/content/dam`);
+	return fixed;
 }
 
-async function visitTitle(node) {
-  return `<h1>${node.properties.elements.title.value}</h1>`;
+async function getGraphql(query, variables, env) {
+	const fetchUrl = `https://${env.AUTHOR_INSTANCE}.adobeaemcloud.com/content/_cq_graphql/global/endpoint.json`;
+	const response = await fetch(fetchUrl, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			authorization: `Bearer ${env.AEM_DEV_TOKEN}`,
+		},
+		body: JSON.stringify({ query, variables }),
+	});
+
+	if (!response.ok) {
+		throw new Error(JSON.stringify({ status: response.status, statusText: response.statusText }));
+	}
+
+	return await response.json();
 }
 
-async function visitParagraph(node) {
-  return node.properties.elements.paragraph.value;
+function visitTitle(node) {
+  return `<${node.titleLevel || 'h1'}>${node.title}</${node.titleLevel || 'h1'}>`;
 }
 
-async function visitImage(node, env) {
-	return `<img src="${node.properties.elements.image.value}">`
+function visitParagraph(node, env) {
+  return fixSrcLinks(node.paragraph.html, env);
 }
 
-async function visitBlockRow(node) {
+function visitImage(node, env) {
+	return `<img src="${env.AUTHOR_INSTANCE}${node.image._path}">`
+}
+
+function visitBlockRow(node, env) {
   let result = '<div>';
-  node.properties.elements.columns.value.forEach((column) => {
-    result += `<div>${column}</div>`;
+  node.columns.forEach((column) => {
+    result += `<div>${fixSrcLinks(column.html, env)}</div>`;
   });
   result += '</div>';
   return result;
 }
 
-async function visitBlock(node, env) {
-  let r = `<div class="${node.properties.elements.blockName.value}">`;
-  const childResults = await Promise.all(node.properties.elements.rows.value.map(async (child) => {
-    const dereferencedFragment = await fetchReference(child, env);
-    return visit(dereferencedFragment, env);
-  }));
-  childResults.forEach((result) => {
-    r += result;
-  });
+function visitBlock(node, env) {
+  let r = `<div class="${node.blockName}">`;
+  node.rows.forEach((row) => {
+		r += visitBlockRow(row, env);
+	})
   r += '</div>'
   return r;
 }
 
-async function visitSection(node, env) {
+function visitSection(node, env) {
   let r = '<div>';
-  const childResults = await Promise.all(node.properties.elements.children.value.map(async (child) => {
-    const dereferencedFragment = await fetchReference(child, env);
-    return visit(dereferencedFragment, env);
-  }));
-  childResults.forEach((result) => {
-    r += result;
-  });
+  node.children.forEach((child) => {
+		r += visit(child, env);
+	})
   r += '</div>';
   return r;
 }
 
-async function visitPage(node, env) {
+function visitPage(node, env) {
   let r = '<body><header></header><main>';
-  const sectionsResults = await Promise.all(node.properties.elements.sections.value.map(async (section) => {
-    const dereferencedFragment = await fetchReference(section, env);
-    return visit(dereferencedFragment, env);
-  }));
-  sectionsResults.forEach((section) => {
-    r += section;
-  });
+	node.sections.forEach((section) => {
+		r+= visitSection(section, env);
+	})
   r += '</main><footer></footer></body>'
   return r;
 }
 
-async function visit(node, env) {
-  switch (node.properties?.['cq:model']?.path) {
-    case '/conf/global/settings/dam/cfm/models/page':
-      return visitPage(node, env);
-    case '/conf/global/settings/dam/cfm/models/section':
-      return visitSection(node, env);
-    case '/conf/global/settings/dam/cfm/models/title':
-      return visitTitle(node, env);
-    case '/conf/global/settings/dam/cfm/models/paragraph':
-      return visitParagraph(node, env);
-    case '/conf/global/settings/dam/cfm/models/block':
-      return visitBlock(node, env);
-    case '/conf/global/settings/dam/cfm/models/block-row':
-      return visitBlockRow(node, env);
-		case '/conf/global/settings/dam/cfm/models/image':
+function visit(node, env) {
+  switch (node.__typename) {
+		case 'ParagraphModel':
+			return visitParagraph(node, env);
+		case 'BlockModel':
+			return visitBlock(node, env);
+		case 'TitleModel':
+			return visitTitle(node);
+		case 'ImageModel':
 			return visitImage(node, env);
     default:
       throw new Error(`not implemented: ${node}`);
@@ -112,7 +130,7 @@ async function visit(node, env) {
 }
 
 async function serveImage(pathName, env) {
-	const fetchUrl = `${baseUrl}${pathName}`;
+	const fetchUrl = `https://${env.AUTHOR_INSTANCE}.adobeaemcloud.com${pathName}`;
 	const response = await fetch(fetchUrl, {
 		headers: {
 			authorization: `Bearer ${env.AEM_DEV_TOKEN}`,
@@ -129,32 +147,47 @@ async function serveImage(pathName, env) {
 	});
 }
 
+const IMAGE_FORMATS = [
+	'.webp',
+	'.png',
+	'.jpg',
+	'.jpeg',
+]
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const pathName = url.pathname.endsWith('/') ? `${url.pathname}index` : url.pathname;
+
+		const authorName = url.pathname.match(/^\/author-p[0-9]+-e[0-9]+/)?.[0];
+
+		env.AUTHOR_INSTANCE = authorName;
+
+		if (!authorName) {
+			return new Response('No author instance provided.', {
+				status: 404,
+			});
+		}
+
+		const resourcePath = url.pathname.split(authorName)[1];
+		const pathName = resourcePath.endsWith('/') ? `${resourcePath}index` : resourcePath;
 
 		const contentSourceAuthHeader = request.headers.get('authorization');
 
 		env.AEM_DEV_TOKEN = contentSourceAuthHeader || env.AEM_DEV_TOKEN;
 
-		if (pathName.endsWith('.webp')) {
+		if (IMAGE_FORMATS.reduce((acc, format) => acc || pathName.endsWith(format), false)) {
 			return serveImage(pathName, env);
 		}
 
-    try {
-      const data = await fetchReference(pathName, env);
+		const result = await getGraphql(query, { path: `/content/dam${pathName}` }, env);
 
-      if (data.properties?.['cq:model']?.path !== '/conf/global/settings/dam/cfm/models/page') {
-        return new Response(null, { status: 404 });
-      }
+		const html = visitPage(result.data.pageByPath.item, env);
 
-      const result = await visit(data, env);
-      return new Response(result, {
-        headers: { 'Content-Type': 'text/html' },
-      });
-    } catch (e) {
-      return new Response(null, { status: 404 });
-    }
+		return new Response(html, {
+			status: 200,
+			headers: {
+				'Content-Type': 'text-html',
+			}
+		});
   },
 };
