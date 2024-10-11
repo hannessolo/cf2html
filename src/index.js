@@ -147,6 +147,16 @@ async function serveImage(pathName, env) {
 	});
 }
 
+async function serveGql(pathName, env) {
+	const result = await getGraphql(query, { path: `/content/dam${pathName}` }, env);
+	return new Response(JSON.stringify(result), {
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		status: 200,
+	});
+}
+
 const IMAGE_FORMATS = [
 	'.webp',
 	'.png',
@@ -177,6 +187,11 @@ export default {
 
 		if (IMAGE_FORMATS.reduce((acc, format) => acc || pathName.endsWith(format), false)) {
 			return serveImage(pathName, env);
+		}
+
+		if (pathName.endsWith('.json')) {
+			const gqlPathName = pathName.slice(0, -4);
+			return serveGql(gqlPathName, env);
 		}
 
 		const result = await getGraphql(query, { path: `/content/dam${pathName}` }, env);
