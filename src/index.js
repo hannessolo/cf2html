@@ -190,7 +190,7 @@ export default {
 		}
 
 		if (pathName.endsWith('.json')) {
-			const gqlPathName = pathName.slice(0, -4);
+			const gqlPathName = pathName.slice(0, -5);
 			return serveGql(gqlPathName, env);
 		}
 
