@@ -1,7 +1,3 @@
-async function delay() {
-	await new Promise(resolve => setTimeout(resolve, 300));
-}
-
 async function createContentFragment(env, path, content) {
 	const url = `https://${env.AUTHOR_INSTANCE}.adobeaemcloud.com${path}`;
 
@@ -11,14 +7,12 @@ async function createContentFragment(env, path, content) {
 			headers: {
 				'Content-Type': 'application/json',
 				authorization: `Bearer ${env.AEM_DEV_TOKEN}`,
+				'X-Aem-Affinity-Type': 'api'
 			},
 			body: JSON.stringify(content)
 		});
 
 		if (!response.ok) {
-			console.log(url)
-			console.log(response.statusText);
-			console.log(JSON.stringify(content));
 			throw new Error(response.statusText);
 		}
 
@@ -45,8 +39,6 @@ async function createBlockRow(node, env) {
 async function createSection(node, env) {
 	// Implementation for creating a section
 	const returnedFragments = await Promise.all(node.children.map((c) => visit(c, env)));
-	await delay();
-	console.log(returnedFragments);
 	return await createContentFragment(env, '/adobe/sites/cf/fragments', {
 		title: `${env.prefix}-section-${Math.random() * 10}`,
 		modelId: btoa('/conf/global/settings/dam/cfm/models/section'),
@@ -60,9 +52,6 @@ async function createSection(node, env) {
 async function createBlock(node, env) {
 	// Implementation for creating a block
 	const returnedFragments = await Promise.all(node.rows.map((c) => visit(c, env)));
-	await delay();
-
-	console.log(returnedFragments);
 	return await createContentFragment(env, '/adobe/sites/cf/fragments', {
 		title: `${env.prefix}-block-${Math.random() * 10}`,
 		modelId: btoa('/conf/global/settings/dam/cfm/models/block'),
@@ -99,9 +88,6 @@ async function createParagraph(node, env) {
 
 async function createPage(node, env) {
 	const returnedFragments = await Promise.all(node.sections.map((c) => visit(c, env)));
-	await delay();
-
-	console.log(returnedFragments);
 	return await createContentFragment(env, '/adobe/sites/cf/fragments', {
 		title: `${env.prefix}-page-${Math.random() * 10}`,
 		modelId: btoa('/conf/global/settings/dam/cfm/models/page'),
