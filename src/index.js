@@ -1,10 +1,11 @@
 import { visitPage } from './cf2html';
-import { visit } from './html2cf';
+import { createHTMLObject, visit } from './html2cf';
 
 const query = `
 query Page($path: String!) {
   pageByPath(_path: $path) {
     item {
+      _id
       _path
       sections {
         children {
@@ -152,60 +153,11 @@ async function handlePost(request, env, ctx) {
 		});
 	}
 
+	env.pagePath = `/content/dam/${url.pathname.split(authorName)[1]}`;
+
 	const response = new Response(request.body);
 
-	const output = {
-		type: 'page',
-		sections: [],
-	};
-
-	await new HTMLRewriter()
-		.on('main > div', {
-			element(e) {
-				output.sections.push({ type: 'section', children: []});
-			}
-		})
-		.on('main > div > h1, main > div > h2', {
-			element(e) {
-				output.sections.at(-1).children.push({ type: 'title', titleType: e.tagName, text: '' });
-			}, text(t) {
-				if (t.text.trim()) {
-					output.sections.at(-1).children.at(-1).text = t.text;
-				}
-			}
-		})
-		.on(' main > div > p', {
-			element(e) {
-				output.sections.at(-1).children.push({ type: 'paragraph', titleType: e.tagName, text: '' });
-			}, text(t) {
-				if (t.text.trim()) {
-					output.sections.at(-1).children.at(-1).text = `<p>${t.text}</p>`;
-				}
-			}
-		})
-		.on('main > div > div[class]', {
-			element(e) {
-				output.sections.at(-1).children.push({ type: 'block', rows: [], name: e.getAttribute('class') });
-			}
-		})
-		.on('main > div > div[class] > div', {
-			element(e) {
-				output.sections.at(-1).children.at(-1).rows.push({ type: 'block-row', columns: [] });
-			}
-		})
-		.on('main > div > div[class] > div > div', {
-			element(e) {
-				output.sections.at(-1).children.at(-1).rows.at(-1).columns.push({ type: 'block-column', text: '' });
-			},
-			text(t) {
-				if (t.text.trim()) {
-					output.sections.at(-1).children.at(-1).rows.at(-1).columns.at(-1).text = t.text.trim();
-
-				}
-			}
-		})
-		.transform(response)
-		.arrayBuffer();
+	const output = await createHTMLObject(response);
 
 	const result = await visit(output, env);
 
