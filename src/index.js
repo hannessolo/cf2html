@@ -140,6 +140,64 @@ async function handleGet(request, env, ctx) {
 	});
 }
 
+async function handleImagePost(request, env, ctx) {
+	const formData = await request.formData();
+	const file = formData.get('file');
+
+	if (!file || !(file instanceof File)) {
+		throw new Error('Request body must contain a file.');
+	}
+
+	const initiateUrl = 'https://author-p130360-e1463269.adobeaemcloud.com/content/dam/projects/da-experiment.initiateUpload.json';
+	const initiationResponse = await fetch(initiateUrl, {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/x-www-form-urlencoded',
+			authorization: `Bearer ${env.AEM_DEV_TOKEN}`,
+		},
+		body: new URLSearchParams({
+			fileName: `${file.name}-${Date.now()}`,
+			fileSize: file.size,
+		}),
+	});
+
+	if (!initiationResponse.ok) {
+		throw new Error(JSON.stringify({ status: initiationResponse.status, statusText: initiationResponse.statusText }));
+	}
+
+	const initiationData = await initiationResponse.json();
+	const { completeURI, files: [{ uploadToken, mimeType, uploadURIs }] } = initiationData;
+
+	const uploadResponse = await fetch(uploadURIs[0], {
+		method: 'PUT',
+		body: file,
+	});
+
+	if (uploadResponse.status !== 201) {
+		console.log(uploadResponse);
+		throw new Error(JSON.stringify({ status: uploadResponse.status }))
+	}
+
+	const completeResponse = await fetch(`https://author-p130360-e1463269.adobeaemcloud.com/${completeURI}`, {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/x-www-form-urlencoded',
+			authorization: `Bearer ${env.AEM_DEV_TOKEN}`,
+		},
+		body: new URLSearchParams({
+			fileName: `${file.name}-${Date.now()}`,
+			uploadToken: uploadToken,
+			mimeType: mimeType,
+		}),
+	});
+
+	if (!completeResponse.ok) {
+		throw new Error(JSON.stringify({ status: completeResponse.status, statusText: completeResponse.statusText }));
+	}
+
+	return new Response('Upload complete', { status: 200 });
+}
+
 async function handlePost(request, env, ctx) {
 	const url = new URL(request.url);
 	const authorName = url.pathname.match(/^\/author-p[0-9]+-e[0-9]+/)?.[0];
@@ -151,6 +209,10 @@ async function handlePost(request, env, ctx) {
 		return new Response('No author instance provided.', {
 			status: 404,
 		});
+	}
+
+	if (url.pathname.endsWith('.png')) {
+		return handleImagePost(request, env, ctx);
 	}
 
 	env.pagePath = `/content/dam/${url.pathname.split(authorName)[1]}`;
