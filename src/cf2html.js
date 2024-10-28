@@ -1,5 +1,5 @@
 function fixSrcLinks(string, env) {
-	const fixed = string.replaceAll(/src="\/content\/dam/g, `src="${env.AUTHOR_INSTANCE}/content/dam`);
+	const fixed = string?.replaceAll(/src="\/content\/dam/g, `src="${env.AUTHOR_INSTANCE}/content/dam`);
 	return fixed;
 }
 
@@ -8,7 +8,7 @@ function visitTitle(node) {
 }
 
 function visitParagraph(node, env) {
-	return fixSrcLinks(node.paragraph.html, env);
+	return fixSrcLinks(node.paragraph.html, env) ?? '';
 }
 
 function visitImage(node, env) {

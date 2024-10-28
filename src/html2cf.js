@@ -163,6 +163,17 @@ async function createPage(node, env) {
 	}, env.pagePath);
 }
 
+// async function createImage(node, env) {
+// 	return await createContentFragment(env, '/adobe/sites/cf/fragments', {
+// 		title: `${env.prefix}-image-${Math.random() * 10}`,
+// 		modelId: btoa('/conf/global/settings/dam/cfm/models/image'),
+// 		parentPath: '/projects/da-experiment',
+// 		fields: [
+// 			{ name: 'image', type: 'content-reference', values: [node.text]},
+// 		]
+// 	});
+// }
+
 export function visit(node, env) {
 	console.log(node);
 	switch (node.type) {
@@ -178,6 +189,8 @@ export function visit(node, env) {
 			return createTitle(node, env);
 		case 'paragraph':
 			return createParagraph(node, env);
+		// case 'image':
+		// 	return createImage(node, env);
 		default:
 			throw new Error(`not implemented: ${node.type}`);
 
@@ -205,13 +218,19 @@ export async function createHTMLObject(response) {
 				}
 			}
 		})
-		.on(' main > div > p', {
+		.on('main > div > p', {
 			element(e) {
-				output.sections.at(-1).children.push({ type: 'paragraph', titleType: e.tagName, text: '' });
+				output.sections.at(-1).children.push({ type: 'paragraph', text: '' });
 			}, text(t) {
 				if (t.text.trim()) {
 					output.sections.at(-1).children.at(-1).text = `<p>${t.text}</p>`;
 				}
+			}
+		})
+		.on('main > div > p img', {
+			element(e) {
+				const imageSrc = e.getAttribute('src');
+				output.sections.at(-1).children.push({ type: 'paragraph', text: `<img src="${imageSrc}">` });
 			}
 		})
 		.on('main > div > div[class]', {

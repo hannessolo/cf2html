@@ -77,9 +77,10 @@ async function serveImage(pathName, env) {
 		throw new Error(JSON.stringify({ status: response.status, statusText: response.statusText }));
 	}
 
-	const imageBuffer = await response.arrayBuffer();
+	const imageBuffer = await response.file();
+	const contentType = response.headers.get('Content-Type') === 'null' ? 'image/jpeg' : response.headers.get('Content-Type');
 	return new Response(imageBuffer, {
-		headers: { 'Content-Type': response.headers.get('Content-Type') },
+		headers: { 'Content-Type': contentType ?? 'image/jpeg' },
 	});
 }
 
@@ -143,6 +144,8 @@ async function handleGet(request, env, ctx) {
 async function handleImagePost(request, env, ctx) {
 	const formData = await request.formData();
 	const file = formData.get('file');
+	const fileName = `${file.name.split('.')[0]}-${Date.now()}`;
+	const fileExtension = file.name.split('.')[1];
 
 	if (!file || !(file instanceof File)) {
 		throw new Error('Request body must contain a file.');
@@ -156,7 +159,7 @@ async function handleImagePost(request, env, ctx) {
 			authorization: `Bearer ${env.AEM_DEV_TOKEN}`,
 		},
 		body: new URLSearchParams({
-			fileName: `${file.name}-${Date.now()}`,
+			fileName,
 			fileSize: file.size,
 		}),
 	});
@@ -166,7 +169,7 @@ async function handleImagePost(request, env, ctx) {
 	}
 
 	const initiationData = await initiationResponse.json();
-	const { completeURI, files: [{ uploadToken, mimeType, uploadURIs }] } = initiationData;
+	const { completeURI, folderPath, files: [{ uploadToken, mimeType, uploadURIs }] } = initiationData;
 
 	const uploadResponse = await fetch(uploadURIs[0], {
 		method: 'PUT',
@@ -185,7 +188,7 @@ async function handleImagePost(request, env, ctx) {
 			authorization: `Bearer ${env.AEM_DEV_TOKEN}`,
 		},
 		body: new URLSearchParams({
-			fileName: `${file.name}-${Date.now()}`,
+			fileName,
 			uploadToken: uploadToken,
 			mimeType: mimeType,
 		}),
@@ -195,7 +198,12 @@ async function handleImagePost(request, env, ctx) {
 		throw new Error(JSON.stringify({ status: completeResponse.status, statusText: completeResponse.statusText }));
 	}
 
-	return new Response('Upload complete', { status: 200 });
+	return new Response(`${folderPath}/${fileName}.${fileExtension}`, {
+		status: 200,
+		headers: {
+			'Access-Control-Allow-Origin': '*'
+		}
+	});
 }
 
 async function handlePost(request, env, ctx) {
